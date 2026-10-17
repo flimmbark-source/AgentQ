@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "note": "Limited public execution queue. Not a mirror or source of truth for the Google research workbook. No clinical or participant data belongs here.",
+  "tasks": [
+    {
+      "id": "AQ-001",
+      "title": "Build a neutral experience-recognition mechanics prototype",
+      "status": "ready",
+      "approved_to_execute": true,
+      "priority": 1,
+      "dependencies": [],
+      "allowed_paths": ["prototypes/experience-recognition/"],
+      "objective": "Create a small static browser-based, keyboard-accessible prototype where the user can explore two different fictional pressure patterns, experience their rules and choose whether either resonates with their experience. Distinguish resonance from proof of an exact shared mental state. No diagnosis labels, identity data capture, storage, telemetry, or clinical claims.",
+      "acceptance_checks": [
+        "It runs locally by opening index.html without a build step or external dependencies.",
+        "Two distinct interaction patterns produce visibly different gameplay tradeoffs and have clear skip/exit paths.",
+        "A participant can choose 'resonates', 'partially resonates', 'does not resonate', or 'prefer not to say' after playing, with no persistence or network calls.",
+        "Keyboard access, plain-language instructions, reduced-motion consideration and readable contrast are documented.",
+        "A local README separates implemented behavior, design hypotheses, limitations, and untested participant impact."
+      ]
+    },
+    {
+      "id": "AQ-002",
+      "title": "Draft the proposed actor-to-actor product flow",
+      "status": "ready",
+      "approved_to_execute": true,
+      "priority": 2,
+      "dependencies": [],
+      "allowed_paths": ["docs/work-products/actor-flow/"],
+      "objective": "Write a source-conscious hypothetical journey for the individual who recognizes an experience, a family member who plays it, and a therapist who facilitates discussion. Clearly distinguish confirmed product intent from unverified UX and participant permissions; include mismatch, opt-out and distress scenarios.",
+      "acceptance_checks": [
+        "A matrix identifies each actor's proposed responsibilities and what remains unknown.",
+        "A sequence diagram or step table covers selection, sharing, play, and facilitated discussion.",
+        "Consent, non-resonance, misinterpretation and stopping points are surfaced as clinical/product questions, not automatically solved.",
+        "Contains an explicit statement that no clinical testing, therapeutic efficacy or real session workflow has been validated."
+      ]
+    },
+    {
+      "id": "AQ-003",
+      "title": "Draft a neutral recognition feedback protocol",
+      "status": "ready",
+      "approved_to_execute": true,
+      "priority": 3,
+      "dependencies": [],
+      "allowed_paths": ["research/drafts/recognition-feedback/"],
+      "objective": "Prepare a nonclinical, unapproved draft protocol that separates felt intensity, personal resonance, interpretation of causal pressures, and imagined next responses. Include neutral questions, negative cases, a privacy-minimal coding grid and explicit external ethical review gates. No invented literature or results.",
+      "acceptance_checks": [
+        "Protocol clearly labels proposed adult nonclinical feedback and required consent/review conditions.",
+        "Question ordering does not disclose the desired answer before collecting open-ended interpretations.",
+        "Coding sheet distinguishes verbatim observations, participant interpretations, coder inferences and unanswered questions.",
+        "Contains disconfirming observations, distress/opt-out and limitation sections; no participant data or clinical claims."
+      ]
+    }
+  ]
+}

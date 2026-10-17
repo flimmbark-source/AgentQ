@@ -1,0 +1,125 @@
+name: AgentQ Runner
+
+on:
+  workflow_dispatch:
+    inputs:
+      requested_task:
+        description: 'Optional AQ-### task ID (blank chooses highest priority)'
+        type: string
+        required: false
+        default: ''
+      dry_run:
+        description: 'Select a task without calling Codex or publishing a PR'
+        type: boolean
+        required: true
+        default: true
+  schedule:
+    # Runs hourly only when repository Actions variable AGENTQ_ENABLED is 'true'.
+    - cron: '17 * * * *'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: agentq-runner
+  cancel-in-progress: false
+
+jobs:
+  develop:
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.AGENTQ_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout without persistent credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Verify runner source
+        run: python -m unittest discover -s tests -v
+
+      - name: Choose one task and check existing pull requests
+        id: select
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REQUESTED_TASK: ${{ inputs.requested_task }}
+        run: |
+          set -euo pipefail
+          python scripts/select_task.py --task-id "$REQUESTED_TASK" --out-dir .agentq/runtime --max-open 2
+          cat .agentq/runtime/selection.env >> "$GITHUB_OUTPUT"
+          cat .agentq/runtime/selection.json
+
+      - name: Show dry-run result
+        if: ${{ inputs.dry_run == true }}
+        run: echo 'Dry run: no model call, no GitHub PR.'
+
+      - name: Check API secret before paid run
+        if: ${{ steps.select.outputs.has_task == 'true' && inputs.dry_run != true }}
+        env:
+          CODEX_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -z "$CODEX_KEY" ]; then
+            echo 'Missing OPENAI_API_KEY secret. See docs/SETUP.md' >&2
+            exit 1
+          fi
+
+      - name: Develop bounded task with Codex
+        id: codex
+        if: ${{ steps.select.outputs.has_task == 'true' && inputs.dry_run != true }}
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          permission-profile: ':workspace'
+          safety-strategy: drop-sudo
+          prompt-file: .agentq/runtime/prompt.md
+          output-file: .agentq/runtime/codex-result.md
+
+      - name: Validate generated file boundaries
+        if: ${{ steps.select.outputs.has_task == 'true' && inputs.dry_run != true }}
+        run: |
+          python scripts/validate_changes.py --task-file .agentq/runtime/task.json --repo-root .
+          python -m unittest discover -s tests -v
+
+      - name: Open draft review pull request
+        id: publish
+        if: ${{ steps.select.outputs.has_task == 'true' && inputs.dry_run != true }}
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ github.token }}
+          base: main
+          branch: agentq/task-${{ steps.select.outputs.task_id }}-${{ github.run_id }}
+          title: 'AgentQ: ${{ steps.select.outputs.task_id }} development output'
+          commit-message: 'agentq: develop ${{ steps.select.outputs.task_id }}'
+          body: |
+            AgentQ Task: ${{ steps.select.outputs.task_id }}
+
+            Generated in an isolated, bounded run. This is an **unreviewed development artifact**, not evidence of clinical efficacy or a confirmed product decision.
+
+            - Check source, behavior, accessibility and assumptions before merging.
+            - Confirm output is within the task allowlist and no sensitive material has been included.
+            - Merging this PR marks the task complete for task-selection purposes.
+          draft: true
+          delete-branch: true
+          add-paths: |
+            prototypes/**
+            docs/work-products/**
+            research/drafts/**
+
+      - name: Write run summary
+        if: always()
+        env:
+          SELECTED_TASK: ${{ steps.select.outputs.task_id }}
+          PUBLISHED_PR: ${{ steps.publish.outputs.pull-request-url }}
+        run: |
+          {
+            echo '## AgentQ run'
+            echo "Selected task: ${SELECTED_TASK:-none}"
+            echo "Pull request: ${PUBLISHED_PR:-none}"
+            echo 'No automatic merge or research workbook write-back is performed.'
+          } >> "$GITHUB_STEP_SUMMARY"
