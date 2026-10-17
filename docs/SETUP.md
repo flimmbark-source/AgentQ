@@ -28,3 +28,7 @@ python scripts/select_task.py --out-dir /tmp/agentq-preview
 ## Cost and access
 
 Model calls consume your OpenAI API budget, plus applicable GitHub Actions minutes. Review costs regularly at the provider dashboards. If this public repository contains sensitive project material, change repository visibility in GitHub settings **before** running development tasks that would need to read it.
+
+## Optional self-improvement
+
+After verifying a paid development run, select self_improve=true on a manual workflow dispatch to permit one extra paid model pass. To enable it on future scheduled paid runs, set Actions variable AGENTQ_SELF_IMPROVE_ENABLED=true. Leave it false or unset otherwise. This is separate from AGENTQ_ENABLED, which controls the hourly runner schedule. See SELF_IMPROVEMENT.md.
