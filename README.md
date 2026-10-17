@@ -38,3 +38,7 @@ python scripts/validate_changes.py --task-file /tmp/agentq-preview/task.json --r
 ```
 
 The last command checks current modified/untracked files against the selected task's allowlist; it is designed to run after Codex has created output.
+
+## Bounded self-improvement
+
+Each run records sanitized diagnostic information. An optional paid second Codex pass can propose one regression-tested AgentQ improvement in a separate draft PR. No self-editing is merged automatically, and a logged run is not proof of improved ability. See [Self-improvement](docs/SELF_IMPROVEMENT.md).
