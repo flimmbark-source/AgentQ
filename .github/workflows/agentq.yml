@@ -13,6 +13,11 @@ on:
         type: boolean
         required: true
         default: true
+      self_improve:
+        description: 'Propose one tested runner improvement; adds a second paid API call'
+        type: boolean
+        required: true
+        default: false
   schedule:
     # Runs hourly only when repository Actions variable AGENTQ_ENABLED is 'true'.
     - cron: '17 * * * *'
@@ -27,6 +32,8 @@ concurrency:
 
 jobs:
   develop:
+    outputs:
+      published: ${{ steps.publish.outputs.pull-request-url }}
     if: ${{ github.event_name == 'workflow_dispatch' || vars.AGENTQ_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -57,7 +64,8 @@ jobs:
 
       - name: Show dry-run result
         if: ${{ inputs.dry_run == true }}
-        run: echo 'Dry run: no model call, no GitHub PR.'
+        run: |
+          echo 'Dry run: no model call, no GitHub PR.'
 
       - name: Check API secret before paid run
         if: ${{ steps.select.outputs.has_task == 'true' && inputs.dry_run != true }}
@@ -81,6 +89,7 @@ jobs:
           output-file: .agentq/runtime/codex-result.md
 
       - name: Validate generated file boundaries
+        id: validate
         if: ${{ steps.select.outputs.has_task == 'true' && inputs.dry_run != true }}
         run: |
           python scripts/validate_changes.py --task-file .agentq/runtime/task.json --repo-root .
@@ -111,6 +120,34 @@ jobs:
             docs/work-products/**
             research/drafts/**
 
+      - name: Record sanitized diagnostics on each run
+        if: always()
+        env:
+          TASK_ID: ${{ steps.select.outputs.task_id }}
+          SELECT_OUTCOME: ${{ steps.select.outcome }}
+          CODEX_OUTCOME: ${{ steps.codex.outcome }}
+          VALIDATE_OUTCOME: ${{ steps.validate.outcome }}
+          PUBLISH_OUTCOME: ${{ steps.publish.outcome }}
+          PUBLISHED_PR: ${{ steps.publish.outputs.pull-request-url }}
+          IS_DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          EXTRA=""
+          if [ "$IS_DRY_RUN" = "true" ]; then EXTRA="--dry-run"; fi
+          python scripts/self_review.py report --out .agentq/runtime/learning-report.json \
+            --task "$TASK_ID" --select "${SELECT_OUTCOME:-unknown}" \
+            --codex "${CODEX_OUTCOME:-unknown}" --validate "${VALIDATE_OUTCOME:-unknown}" \
+            --publish "${PUBLISH_OUTCOME:-unknown}" --pr "$PUBLISHED_PR" $EXTRA
+
+      - name: Save sanitized learning record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentq-learning
+          path: .agentq/runtime/learning-report.json
+          if-no-files-found: warn
+          retention-days: 30
+
       - name: Write run summary
         if: always()
         env:
@@ -122,4 +159,95 @@ jobs:
             echo "Selected task: ${SELECTED_TASK:-none}"
             echo "Pull request: ${PUBLISHED_PR:-none}"
             echo 'No automatic merge or research workbook write-back is performed.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  improve:
+    name: Propose tested improvement to AgentQ
+    needs: develop
+    # Optional and never activated by a dry run, failure, or no PR.
+    if: ${{ needs.develop.result == 'success' && needs.develop.outputs.published != '' && (vars.AGENTQ_SELF_IMPROVE_ENABLED == 'true' || (github.event_name == 'workflow_dispatch' && inputs.self_improve == true)) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout fresh source without persistent credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Confirm baseline regression tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Confirm no pending self-improvement PR
+        id: capacity
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/self_review.py capacity --out .agentq/runtime/capacity.env
+          cat .agentq/runtime/capacity.env >> "$GITHUB_OUTPUT"
+
+      - name: Read sanitized development report
+        if: ${{ steps.capacity.outputs.has_capacity == 'true' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: agentq-learning
+          path: .agentq/runtime/learn
+
+      - name: Prepare one bounded improvement mission
+        if: ${{ steps.capacity.outputs.has_capacity == 'true' }}
+        run: |
+          python scripts/self_review.py prompt --report .agentq/runtime/learn/learning-report.json --out .agentq/runtime/improvement-prompt.md
+
+      - name: Attempt one self-improvement with Codex
+        if: ${{ steps.capacity.outputs.has_capacity == 'true' }}
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          permission-profile: ':workspace'
+          safety-strategy: drop-sudo
+          prompt-file: .agentq/runtime/improvement-prompt.md
+          output-file: .agentq/runtime/improvement-result.md
+
+      - name: Enforce protected files and test changes
+        id: validate_improvement
+        if: ${{ steps.capacity.outputs.has_capacity == 'true' }}
+        run: |
+          set -euo pipefail
+          python scripts/self_review.py validate --out .agentq/runtime/improvement.env
+          python -m unittest discover -s tests -v
+          cat .agentq/runtime/improvement.env >> "$GITHUB_OUTPUT"
+
+      - name: Open draft self-improvement PR for human review
+        if: ${{ steps.validate_improvement.outputs.has_improvement == 'true' }}
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ github.token }}
+          base: main
+          branch: agentq/improve-${{ github.run_id }}
+          title: 'AgentQ improvement candidate from run ${{ github.run_id }}'
+          commit-message: 'agentq: propose tested task-selection improvement'
+          body: |
+            AgentQ Improvement For Run: ${{ github.run_id }}
+
+            Candidate only. Passing tests is not proof of improved overall capability.
+            Review before and after behavior, regression evidence, and safety constraints.
+            No automatic merge, clinical claim, or authority to revise product decisions.
+          draft: true
+          delete-branch: true
+          add-paths: |
+            scripts/select_task.py
+            tests/**
+            docs/agent-improvement/**
+
+      - name: Summarize self-improvement attempt
+        if: always()
+        run: |
+          {
+            echo '## AgentQ self-improvement'
+            echo 'Only validated, human-reviewed changes count as improvements.'
+            echo 'No draft PR means no candidate was produced; no gain is claimed.'
           } >> "$GITHUB_STEP_SUMMARY"

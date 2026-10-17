@@ -20,6 +20,10 @@ Framework Transference explores interactive game mechanics as a way to communica
 - Add a short work-product readme stating what works, how to test it, known limitations, what is *not* demonstrated, and proposed next questions.
 - Run the repository tests and any task-specific tests you can safely run. A successful build is **not** evidence of therapeutic benefit.
 
+## Special mode: review-gated AgentQ self-improvement
+
+The separate self-improvement job is NOT an ordinary product task. Only in this explicitly enabled job, the agent may propose edits to scripts/select_task.py, tests/test_*.py, or docs/agent-improvement/*.md. A trusted validator enforces the list, regression tests must accompany executable changes, and the candidate is always a draft PR for a human to review. The agent must NEVER edit workflow files, AGENTS.md, the queue, validators, security policies, secrets, clinical data or product decisions. The restrictions above continue to apply to all ordinary development tasks.
+
 ## Definition of done
 
 1. Files within the designated output directories only.
