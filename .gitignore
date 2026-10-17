@@ -1,0 +1,10 @@
+.agentq/
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+.DS_Store
